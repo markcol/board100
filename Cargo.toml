@@ -1,0 +1,7 @@
+[package]
+name = "square100"
+version = "0.1.0"
+authors = ["Mark H. Colburn <mark.h.colburn@oracle.com>"]
+edition = "2018"
+
+[dependencies]
