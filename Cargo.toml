@@ -1,7 +1,16 @@
 [package]
 name = "square100"
 version = "0.1.0"
-authors = ["Mark H. Colburn <mark.h.colburn@oracle.com>"]
+authors = ["Mark H. Colburn <colburn.mark@gmail.com>"]
 edition = "2018"
 
+[lib]
+name = "board"
+path = "src/lib.rs"
+
+[[bin]]
+name = "solver"
+path = "src/bin.rs"
+
 [dependencies]
+
