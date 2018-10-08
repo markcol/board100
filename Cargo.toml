@@ -13,4 +13,4 @@ name = "solver"
 path = "src/bin.rs"
 
 [dependencies]
-
+failure = "0.1"
