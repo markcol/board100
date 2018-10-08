@@ -124,7 +124,7 @@ pub struct Board {
 }
 
 impl Board {
-    /// Create a new board with the dimensions `size` x `size`'.
+    /// Create a new board with the dimensions `size` x `size`.
     pub fn new(size: usize) -> Self {
         let mut size = size;
         if size < 5 {
@@ -181,17 +181,6 @@ impl Board {
         None
     }
 
-    /// Make the next move on the board using a given direction.
-    pub fn next_move(&mut self, dir: Direction) -> Result<(), BoardError> {
-        if !self.is_started() {
-            return Err(BoardError::new("Attempt to move with an empty board"));
-        }
-        match self.valid_move(dir) {
-            Some((x, y)) => self.set_cell(x, y, self.value_at(self.x, self.y) + 1),
-            None => Err(BoardError::new(&format!("Moving in direction: '{}' is invalid", dir))),
-        }
-    }
-
     /// Return true if the board is complete. A board is complete if the value
     /// of the last move equals the maximum number of cells, and there are no
     /// empty cells in the board.
@@ -205,52 +194,54 @@ impl Board {
         self.is_started() && self.possible_moves().len() == 0 
     }
 
-    /// Start the puzzle by placing a 1 in the given location.
-    pub fn start_at(&mut self, x: usize, y: usize) -> Result<(), BoardError> {
-        self.set_value(x, y, 1)
-    }
-
     /// The score is simply the highest value on the board.
     pub fn score(&self) -> usize {
         self.values.iter().cloned().fold(0, u8::max) as usize
     }
+    
+    /// Return the value at the given location on the board.
+    pub fn value_at(&self, x: usize, y: usize) -> u8 {
+        self.values[y * self.size + x]
+    }
+
+    /// Start the puzzle by placing a 1 in the given location.
+    pub fn start_at(&mut self, x: usize, y: usize) -> Result<Board, BoardError> {
+        self.set_value(x, y, 1)
+    }
+    
+    /// Make the next move on the board using a given direction.
+    pub fn next_move(&mut self, dir: Direction) -> Result<Board, BoardError> {
+        if !self.is_started() {
+            return Err(BoardError::new("Attempt to move with an empty board"));
+        }
+        match self.valid_move(dir) {
+            Some((x, y)) => self.set_value(x, y, self.value_at(self.x, self.y) + 1),
+            None => Err(BoardError::new(&format!("Moving in direction: '{}' is invalid", dir))),
+        }
+    }
 
     /// Set the value of location on the board to `value`.
-    fn set_value(&mut self, x: usize, y: usize, value: u8) -> Result<(), BoardError> {
+    fn set_value(&mut self, x: usize, y: usize, value: u8) -> Result<Board, BoardError> {
+        if x >= self.size || y >= self.size {
+            return Err(BoardError::new(&format!("cannot set cell [{}, {}], out of range ({})", x, y, self.size)));
+        }
         if value < 1 {
             return Err(BoardError::new(&format!("cannot clear cell [{}, {}]", x, y)));
         }
-        if value as usize > self.cells {
-            return Err(BoardError::new(&format!(
-                "cannot set cell [{}, {}] to {} (max: {})",
-                x, y, value, self.cells
-            )));
+        if value <= self.score() as u8 {
+             return Err(BoardError::new(&format!("cannot set cell [{}, {}] = {}, value already used", x, y, value)));
         }
-        self.set_cell(x, y, value)
-    }
-
-    // TODO(markcol): use Index, IndexRef traits instead?
-    fn set_cell(&mut self, x: usize, y: usize, value: u8) -> Result<(), BoardError> {
-        if x >= self.size || y >= self.size {
-            return Err(BoardError::new(&format!(
-                "index [{}, {}] out of range (max: {})",
-                x, y, self.size
-            )));
+        if value > self.cells as u8 {
+            return Err(BoardError::new(&format!("cannot set cell [{}, {}] = {}, larger than ({})", x, y, value, self.cells)));
         }
         if self.value_at(x, y) != 0 {
             return Err(BoardError::new(&format!("cannot change value of cell [{}, {}]", x, y)));
         }
-        self.x = x;
-        self.y = y;
-        self.values[y * self.size + x] = value;
-        Ok(())
-    }
-
-    fn value_at(&self, x: usize, y: usize) -> u8 {
-        if x >= self.size || y >= self.size {
-            return 0;
-        }
-        self.values[y * self.size + x]
+        let mut board = self.clone();
+        board.x = x;
+        board.y = y;
+        board.values[y * self.size + x] = value;
+        Ok(board)
     }
 }
 
@@ -259,10 +250,13 @@ mod tests {
     use super::*;
 
     #[test]
-    // Crate a board and check that invariants hold.
-    fn create_board() {
-        let board = Board::new(10);
+    // Start a board and check that invariants hold.
+    fn new_board() {
+        let mut board = Board::new(10);
+        // newly created board has a size of 10
         assert_eq!(board.size, 10);
+        // newly created bboard has cell count of 100
+        assert_eq!(board.cells, 100);
         // newly created board has a score of 0
         assert_eq!(board.score(), 0);
         // newly created board is not started
@@ -271,21 +265,18 @@ mod tests {
         assert_eq!(board.is_won(), false);
         // no possible moves because board isn't started
         assert_eq!(board.possible_moves().len(), 0);
-    }
-
-    #[test]
-    // Start a board and check that invariants hold.
-    fn start_board() {
-        let mut board = Board::new(10);
-        board.start_at(5, 5).unwrap();
-        assert_eq!(board.values[55], 1);
-        assert_eq!(board.score(), 1);
+        // start the board
+        board = board.start_at(5, 5).unwrap();
         // board is started
         assert_eq!(board.is_started(), true);
-        // board isn't won
-        assert_eq!(board.is_won(), false);
+        // cell at (5, 5) should be 1
+        assert_eq!(board.values[55], 1);
+        // score is 1
+        assert_eq!(board.score(), 1);
         // all moves should be possible
         assert_eq!(board.possible_moves().len(), 8);
+        // board isn't won
+        assert_eq!(board.is_won(), false);
     }
 
     #[test]
@@ -319,7 +310,7 @@ mod tests {
 
         let mut board = Board::new(5);
         assert_eq!(board.is_started(), false);
-        board.start_at(0, 0).unwrap();
+        board = board.start_at(0, 0).unwrap();
         assert_eq!(board.is_started(), true);
         let mut possible = possible_moves.iter();
         let mut i = 1;
@@ -328,12 +319,19 @@ mod tests {
             assert_eq!(board.is_won(), false);
             assert_eq!(board.is_blocked(), false);
             assert_eq!(board.score(), i);
-            assert_eq!(board.next_move(*m).is_ok(), true, "testing move {}", i);
+            let ret = board.next_move(*m);
+            assert_eq!(ret.is_ok(), true, "testing move {}", i);
+            board = ret.unwrap();
             i += 1;
         }
+        assert_eq!(board.possible_moves().len(), *possible.next().unwrap());
+        // ensure we have checked all values
+        assert_eq!(possible.next().is_none(), true);
+        // board is now won
         assert_eq!(board.is_won(), true);
-        assert_eq!(board.score(), 25);
-        assert_eq!(board.possible_moves().len(), 0);
+        // score should be 25 (max board)
+        assert_eq!(board.score(), board.cells);
+        // there should be no possible moves;
         assert_eq!(board.is_blocked(), true);
     }
 }
