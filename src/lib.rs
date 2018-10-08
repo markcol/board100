@@ -31,34 +31,38 @@ use std::error::Error;
 use std::fmt;
 
 #[derive(Debug)]
-pub struct MyError {
+pub struct BoardError {
     details: String
 }
 
-impl MyError{
-    fn new(msg: &str) -> MyError {
-        MyError{
+impl BoardError{
+    fn new(msg: &str) -> BoardError {
+        BoardError{
             details: msg.to_string()
         }
     }
 }
 
-impl fmt::Display for MyError {
+impl fmt::Display for BoardError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.details)
     }
 }
 
-impl Error for MyError {
+impl Error for BoardError {
     fn description(&self) -> &str {
         &self.details
     }
 }
 
-const HV_OFFSET: i32 = 3;
-const DIAG_OFFSET: i32 = 2;
+/// Distance from source for horizontal or vertical moves.
+pub const HV_OFFSET: i32 = 3;
+
+/// Distance from source for diagnal moves (both horizontal and vertical).
+pub const DIAG_OFFSET: i32 = 2;
 
 #[derive(Debug, Copy, Clone)]
+/// Direction represents the direction of a move from the source location.
 pub enum Direction {
     Down,
     DownRight,
@@ -86,16 +90,41 @@ impl Direction {
     }
 }
 
+impl fmt::Display for Direction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let name = match self {
+            Direction::Down => "Down".to_string(),
+            Direction::DownRight => "Down Right".to_string(),
+            Direction::Right => "Right".to_string(),
+            Direction::UpRight => "Up Right".to_string(),
+            Direction::Up => "Up".to_string(),
+            Direction::UpLeft => "Up Left".to_string(),
+            Direction::Left => "Left".to_string(),
+            Direction::DownLeft => "Down Left".to_string(),
+        };
+        write!(f, "{}", name)
+    }
+}
+
 #[derive(Debug, Clone)]
+/// Board represents the puzzle board. It is a square grid of
+/// values 0-(size x size), where size is the vertical/horizontal
+/// dimensions of the board. O represents an empty cell.
 pub struct Board {
+    /// The number of vertical/horizontal cells in te board.
     size: usize,
+    /// The total number of cells in the board (size x size).
     cells: usize,
+    /// The values of the cell in the board.
     values: Vec<u8>,
-    x: usize, // last move location
+    /// The x location of the last cell set in the board.
+    x: usize,
+    /// The y location of the last cell set in the board.
     y: usize,
 }
 
 impl Board {
+    /// Create a new board with the dimensions `size` x `size`'.
     pub fn new(size: usize) -> Self {
         let mut size = size;
         if size < 5 {
@@ -114,9 +143,9 @@ impl Board {
         }
     }
 
-    /// Return true if the board has been started.
+    /// Return `true` if the board has been started; otherwise `false`.
     pub fn is_started(&self) -> bool {
-        self.values[self.y * self.size + self.x] > 0
+        self.value_at(self.x, self.y) > 0
     }
 
     /// Return a list of all possible moves from the current location.
@@ -145,7 +174,7 @@ impl Board {
                 Direction::Left => (x - HV_OFFSET, y),
                 Direction::DownLeft => (x - DIAG_OFFSET, y + DIAG_OFFSET),
             };
-            if x>= 0 && y >= 0 && x < size && y < size && self.values[(y * size + x) as usize] == 0 {
+            if x>= 0 && y >= 0 && x < size && y < size && self.value_at(x as usize, y as usize) == 0 as u8 {
                 return Some((x as usize, y as usize));
             }
         }
@@ -153,14 +182,13 @@ impl Board {
     }
 
     /// Make the next move on the board using a given direction.
-    pub fn next_move(&mut self, dir: Direction) -> Result<(), MyError> {
+    pub fn next_move(&mut self, dir: Direction) -> Result<(), BoardError> {
         if !self.is_started() {
-            return Err(MyError::new("Attempt to move with an empty board"));
+            return Err(BoardError::new("Attempt to move with an empty board"));
         }
-        let val = self.values[self.y * self.size + self.x];
         match self.valid_move(dir) {
-            Some((x, y)) => self.set_cell(x, y, val + 1),
-            None => Err(MyError::new(&format!("Moving in direction: {:?} is invalid", dir))),
+            Some((x, y)) => self.set_cell(x, y, self.value_at(self.x, self.y) + 1),
+            None => Err(BoardError::new(&format!("Moving in direction: '{}' is invalid", dir))),
         }
     }
 
@@ -169,16 +197,16 @@ impl Board {
     /// empty cells in the board.
     pub fn is_won(&self) -> bool {
         static ZERO: u8 = 0 as u8;
-        self.values[self.y * self.size + self.x] == self.cells as u8 && !self.values.contains(&ZERO)
+        self.value_at(self.x, self.y) == self.cells as u8 && !self.values.contains(&ZERO)
     }
 
     /// Return `true` if there are no possible moves for the current board.
-    pub fn is_blocked(self) -> bool {
+    pub fn is_blocked(&self) -> bool {
         self.is_started() && self.possible_moves().len() == 0 
     }
 
     /// Start the puzzle by placing a 1 in the given location.
-    pub fn start_at(&mut self, x: usize, y: usize) -> Result<(), MyError> {
+    pub fn start_at(&mut self, x: usize, y: usize) -> Result<(), BoardError> {
         self.set_value(x, y, 1)
     }
 
@@ -188,12 +216,12 @@ impl Board {
     }
 
     /// Set the value of location on the board to `value`.
-    fn set_value(&mut self, x: usize, y: usize, value: u8) -> Result<(), MyError> {
+    fn set_value(&mut self, x: usize, y: usize, value: u8) -> Result<(), BoardError> {
         if value < 1 {
-            return Err(MyError::new(&format!("cannot clear cell [{}, {}]", x, y)));
+            return Err(BoardError::new(&format!("cannot clear cell [{}, {}]", x, y)));
         }
         if value as usize > self.cells {
-            return Err(MyError::new(&format!(
+            return Err(BoardError::new(&format!(
                 "cannot set cell [{}, {}] to {} (max: {})",
                 x, y, value, self.cells
             )));
@@ -202,20 +230,27 @@ impl Board {
     }
 
     // TODO(markcol): use Index, IndexRef traits instead?
-    fn set_cell(&mut self, x: usize, y: usize, value: u8) -> Result<(), MyError> {
+    fn set_cell(&mut self, x: usize, y: usize, value: u8) -> Result<(), BoardError> {
         if x >= self.size || y >= self.size {
-            return Err(MyError::new(&format!(
+            return Err(BoardError::new(&format!(
                 "index [{}, {}] out of range (max: {})",
                 x, y, self.size
             )));
         }
-        if self.values[y * self.size + x] != 0 {
-            return Err(MyError::new(&format!("cannot change value of cell [{}, {}]", x, y)));
+        if self.value_at(x, y) != 0 {
+            return Err(BoardError::new(&format!("cannot change value of cell [{}, {}]", x, y)));
         }
         self.x = x;
         self.y = y;
         self.values[y * self.size + x] = value;
         Ok(())
+    }
+
+    fn value_at(&self, x: usize, y: usize) -> u8 {
+        if x >= self.size || y >= self.size {
+            return 0;
+        }
+        self.values[y * self.size + x]
     }
 }
 
@@ -224,6 +259,7 @@ mod tests {
     use super::*;
 
     #[test]
+    // Crate a board and check that invariants hold.
     fn create_board() {
         let board = Board::new(10);
         assert_eq!(board.size, 10);
@@ -238,6 +274,7 @@ mod tests {
     }
 
     #[test]
+    // Start a board and check that invariants hold.
     fn start_board() {
         let mut board = Board::new(10);
         board.start_at(5, 5).unwrap();
@@ -252,14 +289,15 @@ mod tests {
     }
 
     #[test]
+    // Test a complete set of moves on a 5x5 board and confirm that all
+    // invariants hold. The completed board looks like:
+    //
+    //      1 24 14  2 25
+    //     16 21  5  8 20
+    //     13 10 18 23 11
+    //      4  7 15  3  6
+    //     17 22 12  9 19
     fn win_5() {
-            
-        //  1 24 14  2 25
-        // 16 21  5  8 20
-        // 13 10 18 23 11
-        //  4  7 15  3  6
-        // 17 22 12  9 19
-
         let moves = [
             Direction::Right, Direction::Down, Direction::Left, 
             Direction::UpRight, Direction::DownRight, Direction::Left,
@@ -270,11 +308,28 @@ mod tests {
             Direction::Up, Direction::Left, Direction::Down,
             Direction::UpRight, Direction::UpLeft, Direction::Right
         ];
+        // The number of possible moves on the board after each move.
+        let possible_moves = [
+            3, 2, 2, 1, 2, 
+            2, 2, 2, 2, 1,
+            2, 1, 2, 1, 2,
+            1, 1, 2, 2, 1,
+            1, 1, 1, 1, 0,
+        ];
 
         let mut board = Board::new(5);
+        assert_eq!(board.is_started(), false);
         board.start_at(0, 0).unwrap();
+        assert_eq!(board.is_started(), true);
+        let mut possible = possible_moves.iter();
+        let mut i = 1;
         for m in moves.iter() {
-            assert_eq!(board.next_move(*m).is_ok(), true);
+            assert_eq!(board.possible_moves().len(), *possible.next().unwrap(), "testing move {}", i);
+            assert_eq!(board.is_won(), false);
+            assert_eq!(board.is_blocked(), false);
+            assert_eq!(board.score(), i);
+            assert_eq!(board.next_move(*m).is_ok(), true, "testing move {}", i);
+            i += 1;
         }
         assert_eq!(board.is_won(), true);
         assert_eq!(board.score(), 25);
