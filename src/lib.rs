@@ -1,5 +1,4 @@
 /*
-
 A Rust solver for a simple numerical game.
 
 See the inital article at [simple-number].
@@ -24,35 +23,31 @@ top-left corner
 [simple-number]: https://www.nurkiewicz.com/2018/09/brute-forcing-seemingly-simple-number.html
  */
 
-#![allow(dead_code)]
+#[deny(missing_docs)]
+
+#[macro_use] extern crate failure;
 
 use std::slice::Iter;
-use std::error::Error;
 use std::fmt;
+use failure::Error;
 
-#[derive(Debug)]
-pub struct BoardError {
-    details: String
-}
-
-impl BoardError{
-    fn new(msg: &str) -> BoardError {
-        BoardError{
-            details: msg.to_string()
-        }
-    }
-}
-
-impl fmt::Display for BoardError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.details)
-    }
-}
-
-impl Error for BoardError {
-    fn description(&self) -> &str {
-        &self.details
-    }
+#[derive(Debug, Fail, PartialEq)]
+/// Custom Error for invalid board actions.
+pub enum BoardError {
+    #[fail(display = "Board not started.")]
+    NotStarted,                                             // Board not started
+    #[fail(display = "Moving in direction '{}' from [{},{}] is invalid", dir, x, y)]
+    BadDirection{dir: Direction, x:usize, y:usize},         // Moving in direction '{}' is invalid
+    #[fail(display = "Cannot set cell [{},{}]: out of range {}", x, y, max)]
+    IndexOutOfRange{x: usize, y:usize, max: usize},         // cannot set cell [{}, {}], out of range ({})
+    #[fail(display = "Cannot clear cell [{}, {}]", x, y)]
+    CannotClear{x:usize, y:usize},                          // cannot clear cell [{}, {}]
+    #[fail(display = "cannot set cell [{}, {}] = {}: value already used", x, y, value)]
+    ValueUsed{x:usize, y:usize, value:u8},                    // cannot set cell [{}, {}] = {}, value already used
+    #[fail(display = "Cannot set cell [{},{}] = {}: value larger than {}", x, y, value, max)]
+    ValueOutOfRange{x:usize, y:usize, value:u8, max:usize},   // cannot set cell [{}, {}] = {}, larger than {}
+    #[fail(display = "Cell [{},{}] is not empty", x, y)]
+    NotEmpty{x:usize, y:usize},                             // cell [{}, {}] is not empty
 }
 
 /// Distance from source for horizontal or vertical moves.
@@ -61,7 +56,7 @@ pub const HV_OFFSET: i32 = 3;
 /// Distance from source for diagnal moves (both horizontal and vertical).
 pub const DIAG_OFFSET: i32 = 2;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 /// Direction represents the direction of a move from the source location.
 pub enum Direction {
     Down,
@@ -143,6 +138,7 @@ impl Board {
         }
     }
 
+    #[inline]
     /// Return `true` if the board has been started; otherwise `false`.
     pub fn is_started(&self) -> bool {
         self.value_at(self.x, self.y) > 0
@@ -184,21 +180,25 @@ impl Board {
     /// Return true if the board is complete. A board is complete if the value
     /// of the last move equals the maximum number of cells, and there are no
     /// empty cells in the board.
+    #[inline]
     pub fn is_won(&self) -> bool {
         static ZERO: u8 = 0 as u8;
         self.value_at(self.x, self.y) == self.cells as u8 && !self.values.contains(&ZERO)
     }
 
     /// Return `true` if there are no possible moves for the current board.
+    #[inline]
     pub fn is_blocked(&self) -> bool {
         self.is_started() && self.possible_moves().len() == 0 
     }
 
+    #[inline]
     /// The score is simply the highest value on the board.
     pub fn score(&self) -> usize {
         self.values.iter().cloned().fold(0, u8::max) as usize
     }
     
+    #[inline]
     /// Return the value at the given location on the board.
     pub fn value_at(&self, x: usize, y: usize) -> u8 {
         self.values[y * self.size + x]
@@ -212,30 +212,30 @@ impl Board {
     /// Make the next move on the board using a given direction.
     pub fn next_move(&mut self, dir: Direction) -> Result<Board, BoardError> {
         if !self.is_started() {
-            return Err(BoardError::new("Attempt to move with an empty board"));
+            return Err(BoardError::NotStarted);
         }
         match self.valid_move(dir) {
             Some((x, y)) => self.set_value(x, y, self.value_at(self.x, self.y) + 1),
-            None => Err(BoardError::new(&format!("Moving in direction: '{}' is invalid", dir))),
+            None => Err(BoardError::BadDirection{dir, x:self.x, y:self.y}),
         }
     }
 
     /// Set the value of location on the board to `value`.
     fn set_value(&mut self, x: usize, y: usize, value: u8) -> Result<Board, BoardError> {
         if x >= self.size || y >= self.size {
-            return Err(BoardError::new(&format!("cannot set cell [{}, {}], out of range ({})", x, y, self.size)));
+            return Err(BoardError::IndexOutOfRange{x, y, max:self.size})
         }
         if value < 1 {
-            return Err(BoardError::new(&format!("cannot clear cell [{}, {}]", x, y)));
+            return Err(BoardError::CannotClear{x, y});
         }
         if value <= self.score() as u8 {
-             return Err(BoardError::new(&format!("cannot set cell [{}, {}] = {}, value already used", x, y, value)));
+             return Err(BoardError::ValueUsed{x, y, value});
         }
         if value > self.cells as u8 {
-            return Err(BoardError::new(&format!("cannot set cell [{}, {}] = {}, larger than ({})", x, y, value, self.cells)));
+            return Err(BoardError::ValueOutOfRange{x, y, value, max:self.cells});
         }
         if self.value_at(x, y) != 0 {
-            return Err(BoardError::new(&format!("cannot change value of cell [{}, {}]", x, y)));
+            return Err(BoardError::NotEmpty{x, y});
         }
         let mut board = self.clone();
         board.x = x;
@@ -333,5 +333,15 @@ mod tests {
         assert_eq!(board.score(), board.cells);
         // there should be no possible moves;
         assert_eq!(board.is_blocked(), true);
+    }
+
+    #[test]
+    fn bad_starting_location() {
+        const MAX: usize = 5;
+        let mut board = Board::new(MAX);
+        assert_eq!(board.is_started(), false);
+        let ret = board.start_at(MAX+1, 1);
+        assert_eq!(ret.is_err(), true);
+        assert_eq!(ret.err(), Some(BoardError::IndexOutOfRange{x:MAX+1, y:1, max:MAX}));
     }
 }
