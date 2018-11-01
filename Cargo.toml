@@ -2,14 +2,7 @@
 name = "square100"
 version = "0.1.0"
 authors = ["Mark H. Colburn <colburn.mark@gmail.com>"]
-
-[lib]
-name = "board"
-path = "src/lib.rs"
-
-[[bin]]
-name = "solver"
-path = "src/bin.rs"
+edition = "2018"
 
 [dependencies]
 failure = "0.1"

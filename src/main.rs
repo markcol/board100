@@ -26,7 +26,9 @@ top-left corner:
 [simple-number]: https://www.nurkiewicz.com/2018/09/brute-forcing-seemingly-simple-number.html
  */
 
-extern crate board;
+#![feature(custom_attribute)]
+
+mod board;
 
 fn main() {
     println!("Hello, world!");
